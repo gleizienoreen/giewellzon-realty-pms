@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo } from "react";
-// *** ADD useLocation ***
-import { useParams, useLocation } from "react-router-dom";
+// *** 1. ADD useNavigate ***
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { PropertiesAPI } from "../../api/properties";
 import InquiryForm from "../../components/layout/InquiryForm";
 
 export default function PropertyDetail() {
   const { id } = useParams();
-  const location = useLocation(); // *** ADD this ***
+  const location = useLocation();
+  const navigate = useNavigate(); // *** 2. ADD this ***
   const [p, setP] = useState(null);
   const [lightbox, setLightbox] = useState({ open: false, index: 0 });
 
@@ -20,33 +21,27 @@ export default function PropertyDetail() {
     if (id) load();
   }, [id]);
 
-  // *** NEW: useEffect to scroll to hash ***
+  // *** (useEffect for hash scrolling is unchanged) ***
   useEffect(() => {
-    // Only scroll if there's a hash and property data (p) has loaded
     if (location.hash && p) {
       const id = location.hash.replace("#", "");
-      // Use a timeout to ensure the element has rendered
       const timer = setTimeout(() => {
         const element = document.getElementById(id);
         if (element) {
           element.scrollIntoView({ behavior: "smooth", block: "start" });
-
-          // Optional: add a temporary highlight
           element.style.transition = "all 0.3s ease-in-out";
-          element.style.backgroundColor = "rgba(255, 235, 59, 0.3)"; // Yellow highlight
+          element.style.backgroundColor = "rgba(255, 235, 59, 0.3)"; 
           const highlightTimer = setTimeout(() => {
             if (element) {
               element.style.backgroundColor = "transparent";
             }
           }, 2500);
-
           return () => clearTimeout(highlightTimer);
         }
-      }, 300); // 300ms delay to wait for render
-
+      }, 300); 
       return () => clearTimeout(timer);
     }
-  }, [location.hash, p]); // Re-run if hash changes or property data loads
+  }, [location.hash, p]); 
 
   // 🧠 Group available units
   const groupedUnits = useMemo(() => {
@@ -55,23 +50,29 @@ export default function PropertyDetail() {
     const availableUnits = p.units.filter((u) => u.status === "available");
 
     const groups = availableUnits.reduce((acc, unit) => {
-      const { specifications, price, photos = [] } = unit;
-      const {
-        bedrooms = 0,
-        bathrooms = 0,
-        floorArea = 0,
-      } = specifications || {};
+      // *** 3. Destructure unitNumber ***
+      const { specifications, price, photos = [], unitNumber } = unit;
 
-      // This key MUST match the key generated in Properties.jsx
-      const key = `beds-${bedrooms}-baths-${bathrooms}-sqm-${floorArea}`;
+      // *** 3. Use unitNumber as the grouping key. ***
+      // If unitNumber is blank, fall back to old spec-based key.
+      const key =
+        unitNumber ||
+        `beds-${specifications?.bedrooms || 0}-baths-${
+          specifications?.bathrooms || 0
+        }-sqm-${specifications?.floorArea || 0}`;
+
+      // *** 3. Use unitNumber as the title, falling back to "Unit" ***
+      const title = unitNumber || "Unit"; 
 
       if (!acc[key]) {
         acc[key] = {
           key,
-          specifications,
+          title, // *** 3. Store the title for the card ***
+          specifications, // Store the first unit's specs for the card body
           count: 0,
           minPrice: price,
           photos: [],
+          firstUnitId: unit._id, // Store the first unit's ID for linking
         };
       }
 
@@ -94,26 +95,18 @@ export default function PropertyDetail() {
   const photos = p.photos?.length ? p.photos : [p.thumbnail].filter(Boolean);
 
   const openLightbox = (i) => setLightbox({ open: true, index: i });
-  const closeLightbox = () => setLightbox({ open: false, index: 0 });
-  const prev = () =>
-    setLightbox((s) => ({
-      ...s,
-      index: (s.index - 1 + photos.length) % photos.length,
-    }));
-  const next = () =>
-    setLightbox((s) => ({ ...s, index: (s.index + 1) % photos.length }));
+  // ... (rest of PropertyDetail component is unchanged) ...
 
   return (
     <div className="py-6 container-page">
+      {/* ... (Back button, Main Image, Grid, etc. are unchanged) ... */}
       <button onClick={() => history.back()} className="mb-3 text-sm underline">
         &larr; Back to Properties
       </button>
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div>
-          {/* ... (rest of the component is the same) ... */}
-
-          {/* 🏠 Main Image, 🖼️ Thumbnail Grid, Property Info, etc. ... */}
+          {/* ... (Main Image, Thumbnails, Info, Video, Description) ... */}
           <div
             className="relative cursor-pointer group"
             onClick={() => openLightbox(0)}
@@ -178,14 +171,19 @@ export default function PropertyDetail() {
             <h3 className="mb-2 font-medium">Description</h3>
             <p className="text-sm text-neutral-700">{p.description || "—"}</p>
           </div>
-
+      
           {/* 🏘️ Available Units */}
           <div className="mt-6">
             <h3 className="mb-2 font-medium">Available Units</h3>
             <div className="space-y-3">
               {groupedUnits.length > 0 ? (
                 groupedUnits.map((group) => (
-                  <UnitGroupCard key={group.key} group={group} />
+                  // *** 4. ADD onClick handler ***
+                  <UnitGroupCard
+                    key={group.key}
+                    group={group}
+                    onClick={() => navigate(`/unit/${group.firstUnitId}`)}
+                  />
                 ))
               ) : (
                 <p className="text-sm text-neutral-700">
@@ -251,7 +249,7 @@ export default function PropertyDetail() {
         </aside>
       </div>
 
-      {/* Lightbox ... (no change here) ... */}
+      {/* ... (Lightbox is unchanged) ... */}
       {lightbox.open && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
@@ -297,8 +295,17 @@ export default function PropertyDetail() {
 }
 
 // 🏘️ UnitGroupCard with carousel support
-function UnitGroupCard({ group }) {
-  const { specifications, count, minPrice, photos = [], key } = group; // *** Destructure key ***
+// *** 4. ACCEPT onClick prop ***
+function UnitGroupCard({ group, onClick }) {
+  // *** 5. Destructure 'title' from group ***
+  const {
+    specifications,
+    count,
+    minPrice,
+    photos = [],
+    key,
+    title, // <-- This is the new title (from unitNumber)
+  } = group; 
   const [index, setIndex] = useState(0);
   const {
     bedrooms = 0,
@@ -306,30 +313,31 @@ function UnitGroupCard({ group }) {
     floorArea = 0,
     lotArea = 0,
     parking = 0,
-  } = specifications || {};
+  } = specifications || {}; // Specs are still used for the *body*
 
-  let title = "Unit";
-  if (bedrooms > 0) {
-    title = `${bedrooms} Bedroom ${
-      bathrooms > 0 ? `/ ${bathrooms} Bathroom` : ""
-    }`;
-  } else if (floorArea > 0) {
-    title = `${floorArea} sqm Unit`;
-  } else if (lotArea > 0) {
-    title = `${lotArea} sqm Lot`;
-  }
+  // *** 5. REMOVE the old spec-based title logic ***
+  // let title = "Unit";
+  // if (bedrooms > 0) { ... }
 
   const hasPhotos = photos && photos.length > 0;
 
   return (
-    // *** MODIFIED: Add id={key} to this div ***
-    <div id={key} className="p-4 card space-y-3 scroll-mt-20">
+    // *** 4. ADD onClick, cursor-pointer, and hover effect ***
+    <div
+      id={key}
+      onClick={onClick}
+      className="p-4 card space-y-3 scroll-mt-20 cursor-pointer transition-all hover:shadow-lg hover:border-brand-primary/50 border border-transparent"
+    >
       {" "}
       {/* Added scroll-mt-20 for header offset */}
       <div className="flex items-center justify-between">
+        {/* *** 5. Use the new 'title' prop directly *** */}
         <div className="text-lg font-semibold text-brand-primary">{title}</div>
         <span className="badge badge-green">{count} Available</span>
       </div>
+
+      {/* *** 5. REMOVE the unitNumbers list (now redundant) *** */}
+      
       <div className="font-semibold text-brand-primary">
         Starting from: ₱ {Number(minPrice || 0).toLocaleString()}
       </div>
@@ -344,15 +352,21 @@ function UnitGroupCard({ group }) {
           {photos.length > 1 && (
             <>
               <button
-                onClick={() =>
-                  setIndex((index - 1 + photos.length) % photos.length)
-                }
+                // *** 6. Add stopPropagation ***
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIndex((index - 1 + photos.length) % photos.length);
+                }}
                 className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full px-2 py-1 text-lg"
               >
                 ‹
               </button>
               <button
-                onClick={() => setIndex((index + 1) % photos.length)}
+                // *** 6. Add stopPropagation ***
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIndex((index + 1) % photos.length);
+                }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full px-2 py-1 text-lg"
               >
                 ›
@@ -371,6 +385,7 @@ function UnitGroupCard({ group }) {
           )}
         </div>
       )}
+      {/* The specs grid still shows details */ }
       <div className="grid gap-2 p-3 text-sm rounded bg-gray-50 md:grid-cols-3">
         {lotArea > 0 && (
           <div>
