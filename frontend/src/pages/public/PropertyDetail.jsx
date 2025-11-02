@@ -1,12 +1,12 @@
 import { useEffect, useState, useMemo } from "react";
-// *** ADD useLocation ***
-import { useParams, useLocation } from "react-router-dom";
+// *** ADD useNavigate and Link ***
+import { useParams, useLocation, useNavigate, Link } from "react-router-dom";
 import { PropertiesAPI } from "../../api/properties";
 import InquiryForm from "../../components/layout/InquiryForm";
 
 export default function PropertyDetail() {
   const { id } = useParams();
-  const location = useLocation(); // *** ADD this ***
+  const location = useLocation();
   const [p, setP] = useState(null);
   const [lightbox, setLightbox] = useState({ open: false, index: 0 });
 
@@ -20,18 +20,14 @@ export default function PropertyDetail() {
     if (id) load();
   }, [id]);
 
-  // *** NEW: useEffect to scroll to hash ***
+  // *** (useEffect for scrolling - no change) ***
   useEffect(() => {
-    // Only scroll if there's a hash and property data (p) has loaded
     if (location.hash && p) {
       const id = location.hash.replace("#", "");
-      // Use a timeout to ensure the element has rendered
       const timer = setTimeout(() => {
         const element = document.getElementById(id);
         if (element) {
           element.scrollIntoView({ behavior: "smooth", block: "start" });
-
-          // Optional: add a temporary highlight
           element.style.transition = "all 0.3s ease-in-out";
           element.style.backgroundColor = "rgba(255, 235, 59, 0.3)"; // Yellow highlight
           const highlightTimer = setTimeout(() => {
@@ -46,7 +42,7 @@ export default function PropertyDetail() {
 
       return () => clearTimeout(timer);
     }
-  }, [location.hash, p]); // Re-run if hash changes or property data loads
+  }, [location.hash, p]);
 
   // 🧠 Group available units
   const groupedUnits = useMemo(() => {
@@ -55,14 +51,14 @@ export default function PropertyDetail() {
     const availableUnits = p.units.filter((u) => u.status === "available");
 
     const groups = availableUnits.reduce((acc, unit) => {
-      const { specifications, price, photos = [] } = unit;
+      // *** 1. Destructure unitNumber ***
+      const { specifications, price, photos = [], unitNumber } = unit;
       const {
         bedrooms = 0,
         bathrooms = 0,
         floorArea = 0,
       } = specifications || {};
 
-      // This key MUST match the key generated in Properties.jsx
       const key = `beds-${bedrooms}-baths-${bathrooms}-sqm-${floorArea}`;
 
       if (!acc[key]) {
@@ -72,6 +68,9 @@ export default function PropertyDetail() {
           count: 0,
           minPrice: price,
           photos: [],
+          representativeUnitId: unit._id,
+          // *** 2. Add unitNumber to the group object ***
+          unitNumber: unitNumber || "Unit", // Add a fallback
         };
       }
 
@@ -111,9 +110,7 @@ export default function PropertyDetail() {
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div>
-          {/* ... (rest of the component is the same) ... */}
-
-          {/* 🏠 Main Image, 🖼️ Thumbnail Grid, Property Info, etc. ... */}
+          {/* ... (Main Image, Thumbnails, Property Info - no changes) ... */}
           <div
             className="relative cursor-pointer group"
             onClick={() => openLightbox(0)}
@@ -298,7 +295,18 @@ export default function PropertyDetail() {
 
 // 🏘️ UnitGroupCard with carousel support
 function UnitGroupCard({ group }) {
-  const { specifications, count, minPrice, photos = [], key } = group; // *** Destructure key ***
+  const navigate = useNavigate();
+  // *** 3. Destructure unitNumber from group ***
+  const {
+    specifications,
+    count,
+    minPrice,
+    photos = [],
+    key,
+    representativeUnitId,
+    unitNumber, // Get the name
+  } = group;
+
   const [index, setIndex] = useState(0);
   const {
     bedrooms = 0,
@@ -308,6 +316,7 @@ function UnitGroupCard({ group }) {
     parking = 0,
   } = specifications || {};
 
+  // *** 4. Keep the old title logic for the subtitle ***
   let title = "Unit";
   if (bedrooms > 0) {
     title = `${bedrooms} Bedroom ${
@@ -322,14 +331,23 @@ function UnitGroupCard({ group }) {
   const hasPhotos = photos && photos.length > 0;
 
   return (
-    // *** MODIFIED: Add id={key} to this div ***
-    <div id={key} className="p-4 card space-y-3 scroll-mt-20">
+    <div
+      id={key}
+      className="p-4 card space-y-3 scroll-mt-20 cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      onClick={() => navigate(`/unit/${representativeUnitId}`)}
+    >
       {" "}
-      {/* Added scroll-mt-20 for header offset */}
-      <div className="flex items-center justify-between">
-        <div className="text-lg font-semibold text-brand-primary">{title}</div>
-        <span className="badge badge-green">{count} Available</span>
+      {/* --- 5. MODIFIED Header to show unitNumber and spec-title --- */}
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-lg font-semibold text-brand-primary">
+            {unitNumber}
+          </div>
+          <div className="text-sm text-neutral-600 -mt-1">{title}</div>
+        </div>
+        <span className="flex-shrink-0 badge badge-green">{count} Available</span>
       </div>
+      {/* --- End Modification --- */}
       <div className="font-semibold text-brand-primary">
         Starting from: ₱ {Number(minPrice || 0).toLocaleString()}
       </div>
@@ -344,15 +362,19 @@ function UnitGroupCard({ group }) {
           {photos.length > 1 && (
             <>
               <button
-                onClick={() =>
-                  setIndex((index - 1 + photos.length) % photos.length)
-                }
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent navigation when clicking buttons
+                  setIndex((index - 1 + photos.length) % photos.length);
+                }}
                 className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full px-2 py-1 text-lg"
               >
                 ‹
               </button>
               <button
-                onClick={() => setIndex((index + 1) % photos.length)}
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent navigation
+                  setIndex((index + 1) % photos.length);
+                }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full px-2 py-1 text-lg"
               >
                 ›
